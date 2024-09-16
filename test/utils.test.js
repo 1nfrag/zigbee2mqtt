@@ -1,78 +1,116 @@
-const utils = require('../lib/util/utils.js');
-const testUtils = require('./utils');
+const utils = require('../lib/util/utils').default;
+const version = require('../package.json').version;
+const versionHerdsman = require('../node_modules/zigbee-herdsman/package.json').version;
+const versionHerdsmanConverters = require('../node_modules/zigbee-herdsman-converters/package.json').version;
 
 describe('Utils', () => {
-    beforeAll(() => {
-        testUtils.stubLogger(jest);
+    it('Object is empty', () => {
+        expect(utils.objectIsEmpty({})).toBeTruthy();
+        expect(utils.objectIsEmpty({a: 1})).toBeFalsy();
     });
 
-    describe('Is xiaomi device', () => {
-        it('Identify xiaomi device', () => {
-            const device = {type: 'Router', manufId: 4151, manufName: 'Xiaomi'};
-            expect(true).toBe(utils.isXiaomiDevice(device));
-        });
-
-        it('Identify xiaomi device without manufName', () => {
-            const device = {type: 'Router', manufId: 4447};
-            expect(true).toBe(utils.isXiaomiDevice(device));
-        });
-
-        it('Identify xiaomi device with different manufName', () => {
-            const device = {type: 'Router', manufId: 4151, manufName: 'Trust International B.V.\u0000'};
-            expect(false).toBe(utils.isXiaomiDevice(device));
-        });
-
-        it('Identify QBKG03LM as enddevice', () => {
-            const device = {type: 'Router', manufId: 4447, modelId: 'lumi.ctrl_neutral1'};
-            expect(false).toBe(utils.isRouter(device));
-            expect('EndDevice').toBe(utils.correctDeviceType(device));
-        });
-
-        it('Identify QBKG04LM as enddevice', () => {
-            const device = {type: 'Router', manufId: 4447, modelId: 'lumi.ctrl_neutral2'};
-            expect(false).toBe(utils.isRouter(device));
-            expect('EndDevice').toBe(utils.correctDeviceType(device));
-        });
+    it('Object has properties', () => {
+        expect(utils.objectHasProperties({a: 1, b: 2, c: 3}, ['a', 'b'])).toBeTruthy();
+        expect(utils.objectHasProperties({a: 1, b: 2, c: 3}, ['a', 'b', 'd'])).toBeFalsy();
     });
 
-    describe('Get endpoint by id', () => {
-        it('Pick default ep', () => {
-            const zigbee = {
-                getDevice: (entityID) => {
-                    return {modelId: 'TRADFRI on/off switch'};
+    it('git last commit', async () => {
+        let mockReturnValue = [];
+        jest.mock('git-last-commit', () => ({
+            getLastCommit: (cb) => cb(mockReturnValue[0], mockReturnValue[1]),
+        }));
+
+        mockReturnValue = [false, {shortHash: '123'}];
+        expect(await utils.getZigbee2MQTTVersion()).toStrictEqual({commitHash: '123', version: version});
+
+        mockReturnValue = [true, null];
+        expect(await utils.getZigbee2MQTTVersion()).toStrictEqual({commitHash: expect.any(String), version: version});
+    });
+
+    it('Check dependency version', async () => {
+        expect(await utils.getDependencyVersion('zigbee-herdsman')).toStrictEqual({version: versionHerdsman});
+        expect(await utils.getDependencyVersion('zigbee-herdsman-converters')).toStrictEqual({version: versionHerdsmanConverters});
+    });
+
+    it('To local iso string', async () => {
+        var date = new Date('August 19, 1975 23:15:30 UTC+00:00');
+        var getTimezoneOffset = Date.prototype.getTimezoneOffset;
+        Date.prototype.getTimezoneOffset = () => 60;
+        expect(utils.formatDate(date, 'ISO_8601_local').endsWith('-01:00')).toBeTruthy();
+        Date.prototype.getTimezoneOffset = () => -60;
+        expect(utils.formatDate(date, 'ISO_8601_local').endsWith('+01:00')).toBeTruthy();
+        Date.prototype.getTimezoneOffset = getTimezoneOffset;
+    });
+    it('Removes null properties from object', () => {
+        const obj1 = {
+            ab: 0,
+            cd: false,
+            ef: null,
+            gh: '',
+            homeassistant: {
+                xyz: 'mock',
+                abcd: null,
+            },
+            nested: {
+                homeassistant: {
+                    abcd: true,
+                    xyz: null,
                 },
-                getEndpoint: (entityID, epId) => {
-                    return {epId: epId == null ? 1 : 0};
+                abc: {},
+                def: null,
+            },
+        };
+
+        utils.removeNullPropertiesFromObject(obj1);
+        expect(obj1).toStrictEqual({
+            ab: 0,
+            cd: false,
+            gh: '',
+            homeassistant: {
+                xyz: 'mock',
+            },
+            nested: {
+                homeassistant: {
+                    abcd: true,
                 },
-            };
-            const endpoint = utils.getEndpointByEntityID(zigbee, '0x12345678', null);
-            expect(endpoint.epId).toBe(1);
+                abc: {},
+            },
         });
 
-        it('Pick default ep from mapping when default defined', () => {
-            const zigbee = {
-                getDevice: (entityID) => {
-                    return {modelId: 'SML002'};
+        const obj2 = {
+            ab: 0,
+            cd: false,
+            ef: null,
+            gh: '',
+            homeassistant: {
+                xyz: 'mock',
+                abcd: null,
+            },
+            nested: {
+                homeassistant: {
+                    abcd: true,
+                    xyz: null,
                 },
-                getEndpoint: (entityID, epId) => {
-                    return {epId};
+                abc: {},
+                def: null,
+            },
+        };
+        utils.removeNullPropertiesFromObject(obj2, ['homeassistant']);
+        expect(obj2).toStrictEqual({
+            ab: 0,
+            cd: false,
+            gh: '',
+            homeassistant: {
+                xyz: 'mock',
+                abcd: null,
+            },
+            nested: {
+                homeassistant: {
+                    abcd: true,
+                    xyz: null,
                 },
-            };
-            const endpoint = utils.getEndpointByEntityID(zigbee, '0x12345678', null);
-            expect(endpoint.epId).toBe(2);
-        });
-
-        it('Pick default ep from mapping when not defined', () => {
-            const zigbee = {
-                getDevice: (entityID) => {
-                    return {modelId: 'lumi.sensor_86sw2.es1'};
-                },
-                getEndpoint: (entityID, epId) => {
-                    return {epId: epId == null ? 1 : 0};
-                },
-            };
-            const endpoint = utils.getEndpointByEntityID(zigbee, '0x12345678', null);
-            expect(endpoint.epId).toBe(1);
+                abc: {},
+            },
         });
     });
 });
